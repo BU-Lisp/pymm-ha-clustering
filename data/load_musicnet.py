@@ -17,7 +17,7 @@ FILENAME: str = "point_cloud.npy"
 def load(data_path: str) -> np.ndarray:
     if not os.path.exists(data_path):
         raise ValueError("ERROR: file [%s] does not exist" % data_path)
-    return  np.load(filepath)
+    return  np.load(data_path)
 
 
 def main() -> np.ndarray:

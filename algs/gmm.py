@@ -1,6 +1,7 @@
 # SYSTEM IMPORTS
 from typing import Callable, List
 import numpy as np
+from scipy.stats import random_correlation, multivariate_normal
 
 
 np.random.seed(12345)
@@ -94,7 +95,7 @@ class GMM(object):
 
         while current_iter < max_iter and abs(prev_ll - current_ll) > epsilon:
             self.em(X)
-            
+
 
             prev_ll = current_ll
             current_ll = self.log_likelihood(X)

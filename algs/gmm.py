@@ -1,5 +1,6 @@
 # SYSTEM IMPORTS
 from typing import Callable, List
+from scipy.stats import multivariate_normal, random_correlation
 import numpy as np
 
 
@@ -16,7 +17,7 @@ EPSILON = 1e-12
 # This function returns the probability of observing your data given N(mu, cov)
 # i.e. how likely it is that N(mu, cov) generated the observed data
 def pdf(X: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
-    return multivariate_normal.pdf(X, mean=mu, cov=cov)
+    return multivariate_normal.pdf(X, mean=mu, cov=cov, allow_singular=True)
 
 
 class GMM(object):
@@ -30,12 +31,11 @@ class GMM(object):
         # generate one covariance matrix per gaussian cluster, must be positive semidefinite
         self.covs: np.ndarray = None
         if self.num_features > 1:
-            # random_correlation.rvs takes in a vector of eigenvalues
-            # whose sum must equal the dimensionality of the vector (i.e. 4 eigs must have sum 4, etc)
-            random_eigs: np.ndarray = np.random.rand(self.num_gaussians, self.num_features)
-            random_eigs /= np.sum(random_eigs, axis=1, keepdims=True)
-            random_eigs *= self.num_features
-            self.covs = np.stack([random_correlation.rvs(eigs) for eigs in random_eigs], axis=0)
+            k: int = int(self.num_features / 2)
+            Ws: List[np.ndarray] = [np.random.randn(self.num_features, k) for _ in range(self.num_gaussians)]
+            self.covs = np.stack([np.dot(W, W.T) + np.diag(np.random.randint(low=1, high=self.num_features,
+                                                                             size=self.num_features))
+                                  for W in Ws], axis=0)
         else:
             # 1-d case....cannot use random_correlation
             self.covs = np.random.rand(self.num_gaussians, self.num_features, self.num_features)
@@ -47,7 +47,7 @@ class GMM(object):
         likelihoods: np.ndarray = np.hstack([pdf(X, mu, cov).reshape(-1,1)
                                              for mu,cov in zip(self.mus, self.covs)])
         likelihoods *= self.priors.reshape(1,-1)
-        return np.sum(np.log(np.sum(likelihoods, axis=1)))
+        return np.sum(np.log(np.sum(likelihoods, axis=1) + EPSILON))
 
     def em(self, X: np.ndarray) -> None:
         # TODO: implement this method
@@ -63,7 +63,7 @@ class GMM(object):
         #       2) self.mus
         #       3) self.covs
         self.priors = gamma.mean(axis=0, keepdims=True).T
-        self.priors /= self.priors.sum()
+        self.priors /= (self.priors.sum() + EPSILON)
 
         """We can do this at least two ways. The first way (commented out) is more direct but less efficient:
            This way computes the formulae (from question 2) as they are written.
@@ -78,7 +78,7 @@ class GMM(object):
            each mu and Sigma involves computing gamma_{ij} / \sum_k gamma_{kj}. If we precompute these values
            (as a matrix), we can save a lot of time (for large data matrices)
         """
-        Ws: np.ndarray = gamma / gamma.sum(axis=0, keepdims=True)
+        Ws: np.ndarray = gamma / (gamma.sum(axis=0, keepdims=True) + EPSILON)
         self.mus = np.vstack([np.sum(Ws[:,k].reshape(-1,1)*X, axis=0, keepdims=True) for k in range(self.num_gaussians)])
         self.covs = np.stack([sum(Ws[i,k]*(x_i - mu).reshape(-1,1).dot((x_i - mu).reshape(1,-1))
                                   for i,x_i in enumerate(X))

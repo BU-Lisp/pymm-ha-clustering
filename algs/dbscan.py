@@ -35,7 +35,7 @@ class DBScan(object):
         self.num_clusters: int = 0
 
     def expand_cluster(self, X, pt_idx, current_cluster_idx) -> bool:
-        print("examining pt [%s]" % pt_idx)
+        # print("examining pt [%s]" % pt_idx)
 
         # go point by point and determine if clusters exist
         neighbor_idxs: np.ndarray = (self.distance_func(X, X[pt_idx]).reshape(-1) < self.epsilon).nonzero()[0]
@@ -68,13 +68,16 @@ class DBScan(object):
                     pts_to_visit.append(neighbor_idxs)
         return True
 
-    def train(self, X: np.ndarray) -> None:
+    def train(self, X: np.ndarray,
+              monitor_func: Callable[["KMeans"], None] = None) -> None:
         self.assignments = np.full((X.shape[0], 1), NO_CLUSTER_CLUSTER_IDX, dtype=int)
 
         for pt_idx in range(X.shape[0]):
             if self.assignments[pt_idx] == NO_CLUSTER_CLUSTER_IDX:
                 if self.expand_cluster(X, pt_idx, self.num_clusters):
                     self.num_clusters += 1
+            if monitor_func is not None:
+                monitor_func(self)
 
 
 def main() -> None:

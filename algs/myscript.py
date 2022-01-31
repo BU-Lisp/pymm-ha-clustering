@@ -2,14 +2,17 @@
 import argparse
 import numpy as np
 import os
-from GMM import GMM 
+from gmm import GMM 
 import sys 
 from datetime import datetime 
 sys.path.append('../data')
-from load_mnist import load_mnist
-from load_musicnet import load_musicnet
-from load_imagenet2012 import load_imagenet2012
+
+from data.load_mnist import load as load_mnist
+from data.load_imagenet2012 import load as load_imagenet
+from data.load_musicnet import load as load_mucisnet
+
 import sklearn.decomposition
+from scipy.stats import random_correlation
 from typing import List
 import kmeans as kmeans_
 

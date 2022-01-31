@@ -4,6 +4,7 @@ import numpy as np
 import os
 from GMM import GMM 
 import sys 
+from datetime import datetime 
 sys.path.append('../data')
 from load_mnist import load_mnist
 from load_musicnet import load_musicnet
@@ -58,6 +59,19 @@ def decomposition(X,d):
     X_pca = X.dot(projection_matrix)
     return X_pca 
 
+def data_load(data):
+    if(data == "mnist"):
+        mnist = load_mnist("../")
+        X = mnist.main()
+    elif(data == "imagenet"):
+        mnist = load_imagenet2012("../", "imagenet2012_500k.npy")
+        X = mnist.main()
+    elif data == "musicnet":
+        mnist = load_musicnet("../")
+        X = mnist.main()
+    return X
+  
+
 
 def main():
 
@@ -66,16 +80,11 @@ def main():
     parser.add_argument("n_components", type=int, help="Number of clusters you want to train")
     args = parser.parse_args()
 
-    if(args.data == "mnist"):
-        mnist = load_mnist("../")
-        X = mnist.main()
-    elif(args.data == "imagenet"):
-        mnist = load_imagenet2012("../", "imagenet2012_500k.npy")
-        X = mnist.main()
-    elif args.data == "musicnet":
-        mnist = load_musicnet("../")
-        X = mnist.main()
+    dl = datetime.now()
+    X = data_load(args.data)
+    tdiff_load = datetime.now() - dl 
 
+    print("data load runtime = ", tdiff_load)
 
     num_features: int = 2
     num_gaussians: int = args.n_components
@@ -96,18 +105,25 @@ def main():
     m = GMM(num_features, num_gaussians)
     print("init lls: %s" % m.log_likelihood(X))
 
+    tt = datetime.now()
     m.train(X, max_iter=100, monitor_func=collect_ll_per_iter)
     lls = np.array(lls, dtype=float)
+    tt_diff = datetime.now() - tt 
 
-    print(lls)
+    print("model train time = ", tt_diff)
+    
+    
+    # if np.any(lls[:-1] > lls[1:]):
+    #     raise RuntimeError("MNIST test failed. Log-likelihood did not monotonically increase")
 
-    if np.any(lls[:-1] > lls[1:]):
-        raise RuntimeError("MNIST test failed. Log-likelihood did not monotonically increase")
-
-    print("mnist test passed")
+    # print("mnist test passed")
 
 if __name__ == "__main__":
+    srt = datetime.now()
     main()
+    srt_diff = datetime.now() - srt 
+
+    print("total script runtime = ", srt_diff)
 
 
 

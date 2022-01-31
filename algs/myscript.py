@@ -102,7 +102,7 @@ def main():
     print(lls)
 
     if np.any(lls[:-1] > lls[1:]):
-        raise RuntimeError("2d test FAILED. Log-likelihood did not monotonically increase")
+        raise RuntimeError("MNIST test failed. Log-likelihood did not monotonically increase")
 
     print("mnist test passed")
 

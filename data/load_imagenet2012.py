@@ -20,6 +20,8 @@ def load(data_path: str) -> np.ndarray:
     return  np.load(data_path)
 
 
+
+
 def main() -> np.ndarray:
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir", type=str, help="the directory to load data from")

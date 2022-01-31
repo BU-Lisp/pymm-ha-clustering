@@ -14,6 +14,8 @@ import requests
 FILENAME: str = "mnist.npz"
 
 
+
+
 def load(data_path: str) -> np.ndarray:
     if not os.path.exists(data_path):
         raise ValueError("ERROR: file [%s] does not exist" % data_path)

@@ -85,26 +85,56 @@ class KMeans(object):
             if num_assigned > 0:
                 self.centers[cluster_idx] = X[X_assigned_mask].mean(axis=0)
 
-    def train(self, X: np.ndarray, epsilon: float = 1e-9, max_iter: int = 1e6,
-              monitor_func: Callable[["KMeans"], None] = None) -> None:
+    def train(self, X: np.ndarray, epsilon: float = 1e-9, current_iter: int = 0, current_cost: float = 0.0,
+            max_iter: int = 1e6, monitor_func: Callable[["KMeans"], None] = None) -> None:
         # structure of iterative algorithm: while (dont give up) and (havent converged): do stuff
-        current_iter: int = 0
+        # current_iter: int = 0
         prev_cost: float = np.inf
-        current_cost: float = 0.0
+        # current_cost: float = 0.0
 
 
         if self.centers is None:
             self.init_centers(X)
         while current_iter < max_iter and abs(prev_cost - current_cost) > epsilon:
             self.train_iter(X)
+            # print(X)
 
             prev_cost = current_cost
             current_cost = self.cost(X)
             current_iter += 1
 
+            # Save (overwrite) with each iteration
+            self.save("kmeans_inst.npz")
+
             if monitor_func is not None:
                 monitor_func(self)
 
+    def save(self, fp: str) -> None:
+        meta: np.array = np.array([self.k, self.num_features])
+        np.savez(fp, meta=meta, centers=self.centers)
+
+    def load(self, fp: str):
+        npz = np.load(fp)
+        meta, centers = npz['meta'], npz['centers']
+        m = KMeans(meta[0], meta[1])
+        m.centers = centers
+        return m
+
+    # ===============
+    # Other idea for resuming with information about current_iter/max_iter etc. 
+    # Pls remove if irrelevant
+    def save_for_resume(self, fp: str, X: np.ndarray, current_iter: int, max_iter: int = 1e6) -> None:
+        meta: np.array = np.array([self.k, self.num_features, current_iter, max_iter])
+        np.savez(fp, meta=meta, X=X, centers=self.centers)
+
+    def load_and_resume(self, fp: str) -> None:
+        # Alternate load-method that leverages meta data and respects max_iter etc.
+        # Caveat: doesn't return KMeans obj as indicated in example (#ibm-mcas)
+        npz = np.load(fp)
+        meta, X, centers = npz['meta'], npz['X'], npz['centers']
+        m = KMeans(meta[0], meta[1])
+        m.centeres = centers
+        m.train(X=X, current_iter=meta[2], max_iter=meta[3])
 
 def main() -> None:
     X = np.array([[1, 1.2, 0.8, 3.7, 3.9, 3.6, 10], [1.1, 0.8, 1, 4, 3.9, 4.1, 10]]).T

@@ -17,7 +17,7 @@ FILE_CHOICES: List[str] = ["imagenet2012_500k.npy", "imagenet2012_800k.npy",]
 def load(data_path: str) -> np.ndarray:
     if not os.path.exists(data_path):
         raise ValueError("ERROR: file [%s] does not exist" % data_path)
-    return  np.load(filepath)
+    return  np.load(data_path)
 
 
 def main() -> np.ndarray:

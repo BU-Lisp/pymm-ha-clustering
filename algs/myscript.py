@@ -7,9 +7,9 @@ import sys
 from datetime import datetime 
 sys.path.append('../data')
 
-from data.load_mnist import load as load_mnist
-from data.load_imagenet2012 import load as load_imagenet
-from data.load_musicnet import load as load_mucisnet
+from load_mnist import load as load_mnist
+# from load_imagenet2012 import load as load_imagenet
+# from load_musicnet import load as load_mucisnet
 
 import sklearn.decomposition
 from scipy.stats import random_correlation
@@ -62,19 +62,15 @@ def decomposition(X,d):
     X_pca = X.dot(projection_matrix)
     return X_pca 
 
-def data_load(data):
+def data_load(data, fpath):
     if(data == "mnist"):
-        mnist = load_mnist("../")
-        X = mnist.main()
+        X = load_mnist(fpath)
     elif(data == "imagenet"):
-        mnist = load_imagenet2012("../", "imagenet2012_500k.npy")
-        X = mnist.main()
+        X = load_imagenet2012(fpath, "imagenet2012_500k.npy")
     elif data == "musicnet":
-        mnist = load_musicnet("../")
-        X = mnist.main()
+        X = load_musicnet(fpath)
     return X
   
-
 
 def main():
 
@@ -84,7 +80,8 @@ def main():
     args = parser.parse_args()
 
     dl = datetime.now()
-    X = data_load(args.data)
+    fpath = "../"
+    X = data_load(args.data, fpath)
     tdiff_load = datetime.now() - dl 
 
     print("data load runtime = ", tdiff_load)
@@ -114,7 +111,6 @@ def main():
     tt_diff = datetime.now() - tt 
 
     print("model train time = ", tt_diff)
-    
     
     # if np.any(lls[:-1] > lls[1:]):
     #     raise RuntimeError("MNIST test failed. Log-likelihood did not monotonically increase")

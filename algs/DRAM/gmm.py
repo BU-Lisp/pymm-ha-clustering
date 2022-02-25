@@ -63,15 +63,7 @@ class GMM(object):
         self.mus = data['arr_0']
         self.covs = data['arr_1']
         self.prior = data['arr_2']
-
-
         
-    
-
-    # def load(self, fp: string) -> "GMM":
-    #     " A method which loads the data contained in filepath (fp) to this object. This method should perform the opposite of the save method"
-    #     ...
-
 
     def log_likelihood(self, X: np.ndarray) -> float:
         likelihoods: np.ndarray = np.hstack([pdf(X, mu, cov).reshape(-1,1)

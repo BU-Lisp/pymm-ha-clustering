@@ -69,7 +69,7 @@ class DBScan(object):
         return True
 
     def train(self, X: np.ndarray,
-              monitor_func: Callable[["KMeans"], None] = None) -> None:
+              monitor_func: Callable[["DBScan"], None] = None) -> None:
         self.assignments = np.full((X.shape[0], 1), NO_CLUSTER_CLUSTER_IDX, dtype=int)
 
         for pt_idx in range(X.shape[0]):
@@ -78,7 +78,18 @@ class DBScan(object):
                     self.num_clusters += 1
             if monitor_func is not None:
                 monitor_func(self)
+    
+    def save(self, fp: str) -> None:
+        # A method which saves this object to the filepath (fp) using the numpy save_npz method
+        model = np.array([self.assignments, self.num_clusters])
+        np.savez(fp, model)
+    
 
+    def load(self, fp: str) -> "DBScan":
+        # A method which loads the data contained in filepath (fp) to this object. This method should perform the opposite of the save method
+        model = np.load(fp)
+        self.assignments = model[0]
+        self.num_clusters = model[1]
 
 def main() -> None:
     X = np.array([[1, 1.2, 0.8, 3.7, 3.9, 3.6, 10], [1.1, 0.8, 1, 4, 3.9, 4.1, 10]]).T

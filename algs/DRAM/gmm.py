@@ -24,6 +24,7 @@ class GMM(object):
     def __init__(self, num_features: int, num_gaussians: int) -> None:
         self.num_features: int = int(num_features)
         self.num_gaussians: int = int(num_gaussians)
+        # self.gamma = None
 
         # generate one mean vector per gaussian cluster
         self.mus: np.ndarray = np.random.randn(self.num_gaussians, self.num_features)
@@ -39,15 +40,37 @@ class GMM(object):
         else:
             # 1-d case....cannot use random_correlation
             self.covs = np.random.rand(self.num_gaussians, self.num_features, self.num_features)
-
         # init priors to uniform distribution
         self.priors: np.ndarray = np.ones((self.num_gaussians, 1), dtype=float)/self.num_gaussians
+
+    # def save(self, fp: string) -> None:
+    #     " A method which saves this object to the filepath (fp) using the numpy save_npz method"
+    #     ...
+    #     np.save("gmm_file.npz",self.num_features, self.gaussians,
+    #                             self.mus, self.covs, self.priors,
+    #                             self.)
+
+    def save(self, fp) -> None:
+        
+        mu = self.mus 
+        sigma = self.covs 
+        prior = self.priors 
+
+        np.savez(fp, mu,sigma,prior)
+
+    def load(self,fp) -> None:
+        data = np.load(fp)
+        self.mus = data['arr_0']
+        self.covs = data['arr_1']
+        self.prior = data['arr_2']
+        
 
     def log_likelihood(self, X: np.ndarray) -> float:
         likelihoods: np.ndarray = np.hstack([pdf(X, mu, cov).reshape(-1,1)
                                              for mu,cov in zip(self.mus, self.covs)])
         likelihoods *= self.priors.reshape(1,-1)
         return np.sum(np.log(np.sum(likelihoods, axis=1) + EPSILON))
+    
 
     def em(self, X: np.ndarray) -> None:
         # TODO: implement this method
@@ -56,6 +79,7 @@ class GMM(object):
         gamma: np.ndarray = np.hstack([(pdf(X, mu.reshape(-1), cov) * prior).reshape(-1, 1)
                                        for mu,cov,prior in zip(self.mus, self.covs, self.priors.reshape(-1))])
         gamma /= (gamma.sum(axis=1, keepdims=True) + EPSILON)
+        # self.gamma = gamma
 
         """M-step"""
         # TODO: update three member variables (attributes, fields, whatever the vocab term you use is):
@@ -94,11 +118,12 @@ class GMM(object):
 
         while current_iter < max_iter and abs(prev_ll - current_ll) > epsilon:
             self.em(X)
+            self.save("metaData") # saves metadata
             
-
             prev_ll = current_ll
             current_ll = self.log_likelihood(X)
             current_iter += 1
+            self.load("metaData.npz") # loads metadata
 
             if monitor_func is not None:
                 monitor_func(self)

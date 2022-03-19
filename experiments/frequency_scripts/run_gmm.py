@@ -4,6 +4,7 @@ import argparse
 import time
 import os
 import sys
+import numpy as np
 
 
 # make sure we can import the files we need from this repo
@@ -21,7 +22,6 @@ import data.load_mnist as mnist
 import data.load_musicnet as musicnet
 import data.load_imagenet2012 as imagenet
 
-
 def main() -> None:
     start_script_time = time.time()
 
@@ -32,6 +32,7 @@ def main() -> None:
     parser.add_argument("--max_iter", type=int, default=int(1e5), help="max number of training iterations")
     args = parser.parse_args()
 
+    saveData = dict()
     start_loading_time = time.time()
     X = None
     filepath = os.path.join(args.data_dir, args.dataset)

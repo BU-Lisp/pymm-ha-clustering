@@ -94,7 +94,6 @@ class GMM(object):
 
         while current_iter < max_iter and abs(prev_ll - current_ll) > epsilon:
             self.em(X)
-            
 
             prev_ll = current_ll
             current_ll = self.log_likelihood(X)

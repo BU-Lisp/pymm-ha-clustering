@@ -31,11 +31,11 @@ def main() -> None:
     parser.add_argument("epsilon", type=float, help="DBSCAN Parameter epsilon")
     parser.add_argument("min_points", type=int, help="DBSCAN Parameter min_points")
     parser.add_argument("dataset", type=str, choices=[mnist.FILENAME, musicnet.FILENAME] + imagenet.FILE_CHOICES, help="which dataset to load")
-    #parser.add_argument("shelf_size", type=int, help="PYMM shelf size (mb)")
+    parser.add_argument("shelf_size", type=int, help="PYMM shelf size (mb)")
     args = parser.parse_args()
 
-    #ds = pymm.shelf('dataset_shelf',size_mb=args.shelf_size,pmem_path='/mnt/pmem0/will_pymm_dbscan',force_new=True)     #initialize a pymm shelf for training dataset
-    ds = pymm.shelf('dataset_shelf',size_mb=1024,pmem_path='/mnt/pmem0/will_pymm_dbscan',force_new=True)
+    ds = pymm.shelf('dataset_shelf',size_mb=args.shelf_size,pmem_path='/mnt/pmem0/will_pymm_dbscan',force_new=True)     #initialize a pymm shelf for training dataset
+    #ds = pymm.shelf('dataset_shelf',size_mb=1024,pmem_path='/mnt/pmem0/will_pymm_dbscan',force_new=True)
 
     start_loading_time = time.time()
     

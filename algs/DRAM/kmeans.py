@@ -85,8 +85,8 @@ class KMeans(object):
             if num_assigned > 0:
                 self.centers[cluster_idx] = X[X_assigned_mask].mean(axis=0)
 
-    def train(self, X: np.ndarray, epsilon: float = 1e-9, max_iter: int = 1e6,
-              monitor_func: Callable[["KMeans"], None] = None) -> None:
+    def train(self, X: np.ndarray, epsilon: float = 1e-9, max_iter: int = 1e6, 
+                monitor_func: Callable[["KMeans"], None] = None) -> None:
         # structure of iterative algorithm: while (dont give up) and (havent converged): do stuff
         current_iter: int = 0
         prev_cost: float = np.inf
@@ -105,6 +105,16 @@ class KMeans(object):
             if monitor_func is not None:
                 monitor_func(self)
 
+    def save(self, fp: str) -> None:
+        meta: np.array = np.array([self.k, self.num_features])
+        np.savez(fp, meta=meta, centers=self.centers)
+
+    def load(self, fp: str):
+        npz = np.load(fp)
+        meta, centers = npz['meta'], npz['centers']
+        m = KMeans(meta[0], meta[1])
+        m.centers = centers
+        return m
 
 def main() -> None:
     X = np.array([[1, 1.2, 0.8, 3.7, 3.9, 3.6, 10], [1.1, 0.8, 1, 4, 3.9, 4.1, 10]]).T

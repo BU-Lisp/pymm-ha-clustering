@@ -114,8 +114,6 @@ class KMeans(object):
 
 def main() -> None:
 
-    s = pymm.shelf('kmeans_test', pmem_path='/mnt/pmem0', size_mb=1024)
-
     X = np.array([[1, 1.2, 0.8, 3.7, 3.9, 3.6, 10], [1.1, 0.8, 1, 4, 3.9, 4.1, 10]]).T
     k: int = 3
 

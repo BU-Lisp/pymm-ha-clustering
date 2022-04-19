@@ -19,7 +19,7 @@ del _cd_
 
 
 # PYTHON PROJECT IMPORTS
-from algs.DRAM.kmeans import KMeans
+from algs.DRAM.dbscan import DBScan
 import data.load_mnist as mnist
 import data.load_musicnet as musicnet
 import data.load_imagenet2012 as imagenet
@@ -35,7 +35,8 @@ def main() -> None:
     parser.add_argument("dataset", type=str, choices=[mnist.FILENAME, musicnet.FILENAME] + imagenet.FILE_CHOICES, help="which dataset to load")
 
     # data type specific arguments
-    parser.add_argument("k", type=float, help="number of clusters")
+    parser.add_argument("epsilon", type=float, help="DBSCAN Parameter epsilon")
+    parser.add_argument("min_points", type=int, help="DBSCAN Parameter min_points")
     parser.add_argument("--max_iter", type=int, default=int(1e5), help="max number of training iterations")
 
     # common default arguments
@@ -71,7 +72,7 @@ def main() -> None:
         loading_times[experiment_idx] = time.time() - start_loading_time
 
         start_model_creation_time = time.time()
-        m = KMeans(args.k, X.shape[-1])
+        m = DBScan(epsilon=args.epsilon, min_points=args.min_points)
         model_creation_times[experiment_idx] = time.time() - start_model_creation_time
 
         with tqdm(total=args.max_iter, desc="training model @ experiment %s" % experiment_idx) as pbar:

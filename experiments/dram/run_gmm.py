@@ -19,7 +19,7 @@ del _cd_
 
 
 # PYTHON PROJECT IMPORTS
-from algs.DRAM.kmeans import KMeans
+from algs.DRAM.gmm import GMM
 import data.load_mnist as mnist
 import data.load_musicnet as musicnet
 import data.load_imagenet2012 as imagenet
@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument("dataset", type=str, choices=[mnist.FILENAME, musicnet.FILENAME] + imagenet.FILE_CHOICES, help="which dataset to load")
 
     # data type specific arguments
-    parser.add_argument("k", type=float, help="number of clusters")
+    parser.add_argument("k", type=float, help="number of clusters (i.e. gaussians)")
     parser.add_argument("--max_iter", type=int, default=int(1e5), help="max number of training iterations")
 
     # common default arguments
@@ -71,7 +71,7 @@ def main() -> None:
         loading_times[experiment_idx] = time.time() - start_loading_time
 
         start_model_creation_time = time.time()
-        m = KMeans(args.k, X.shape[-1])
+        m = GMM(X.shape[-1], args.k)
         model_creation_times[experiment_idx] = time.time() - start_model_creation_time
 
         with tqdm(total=args.max_iter, desc="training model @ experiment %s" % experiment_idx) as pbar:

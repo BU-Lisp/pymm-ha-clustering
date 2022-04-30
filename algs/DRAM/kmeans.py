@@ -1,6 +1,7 @@
 # SYSTEM IMPORTS
 from typing import Callable, List
 import numpy as np
+import sys
 
 
 np.random.seed(12345)
@@ -14,8 +15,11 @@ np.random.seed(12345)
 
 
 
-def l2_squared_distance(X: np.ndarray, center: np.ndarray) -> np.ndarray:
+def l2_squared_distance_old(X: np.ndarray, center: np.ndarray) -> np.ndarray:
     return ((X - center.reshape(1,-1))**2).sum(axis=-1, keepdims=True)
+
+def l2_squared_distance(X: np.ndarray, center: np.ndarray, out: np.ndarray = None) -> np.ndarray:
+    return ((X - center.reshape(1,-1))**2).sum(axis=-1, out=out)
 
 
 class KMeans(object):
@@ -56,6 +60,23 @@ class KMeans(object):
             num_centers_processed += 1
 
     def assign(self, X: np.ndarray) -> np.ndarray:
+        distance_buffer: np.ndarray = np.zeros((X.shape[0], 2), dtype=float)
+        assignments: np.ndarray = np.zeros(X.shape[0], dtype=int)
+
+        self.distance_func(X, self.centers[0, :], out=distance_buffer[:, 0])
+
+        mins: np.ndarray = np.empty_like(assignments)
+        for cluster_idx in range(1, self.k):
+            self.distance_func(X, self.centers[cluster_idx, :], out=distance_buffer[:, 1])
+            np.argmin(distance_buffer, axis=-1, out=mins)
+
+            # if any of mins are 1, then the new value is smaller than the old value
+            # min_mask: np.ndarray = mins == 1
+            assignments[mins == 1] = cluster_idx
+            distance_buffer[:, 0] = distance_buffer[np.arange(X.shape[0]), mins]
+        return assignments
+
+    def assign_old(self, X: np.ndarray) -> np.ndarray:
         X_distances: np.ndarray = np.hstack([self.distance_func(X, self.centers[c_idx]).reshape(-1,1)
                                              for c_idx in range(self.k)])
         return np.argmin(X_distances, axis=-1)
@@ -89,13 +110,13 @@ class KMeans(object):
                 monitor_func: Callable[["KMeans"], None] = None) -> None:
         # structure of iterative algorithm: while (dont give up) and (havent converged): do stuff
         current_iter: int = 0
-        prev_cost: float = np.inf
-        current_cost: float = 0.0
+        prev_cost: float = sys.float_info.max
+        current_cost: float = sys.float_info.epsilon
 
 
         if self.centers is None:
             self.init_centers(X)
-        while current_iter < max_iter and abs(prev_cost - current_cost) > epsilon:
+        while current_iter < max_iter and abs(prev_cost - current_cost)/abs(prev_cost) > epsilon:
             self.train_iter(X)
 
             prev_cost = current_cost
@@ -105,9 +126,16 @@ class KMeans(object):
             if monitor_func is not None:
                 monitor_func(self)
 
-    def save(self, fp: str) -> None:
-        meta: np.array = np.array([self.k, self.num_features])
-        np.savez(fp, meta=meta, centers=self.centers)
+    def save_compressed(self, filepath: str) -> None:
+        np.savez_compressed(filepath, centers=self.centers, k=self.k, num_features=self.num_features)
+
+    def save(self, filepath: str) -> None:
+        np.savez(filepath, centers=self.centers, k=self.k, num_features=self.num_features)
+
+    def save_shelf(self, shelf) -> None:
+        shelf.centers = self.centers
+        shelf.k = self.k
+        shelf.num_features = self.num_features
 
     def load(self, fp: str):
         npz = np.load(fp)

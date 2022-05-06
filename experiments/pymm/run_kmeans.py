@@ -37,7 +37,7 @@ def main() -> None:
     parser.add_argument("dataset", type=str, choices=[mnist.FILENAME, musicnet.FILENAME] + imagenet.FILE_CHOICES, help="which dataset to load")
 
     # data type specific arguments
-    parser.add_argument("k", type=float, help="number of clusters")
+    parser.add_argument("k", type=int, help="number of clusters")
     parser.add_argument("--max_iter", type=int, default=int(1e5), help="max number of training iterations")
 
     # common default arguments

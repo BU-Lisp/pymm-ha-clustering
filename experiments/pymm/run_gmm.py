@@ -21,7 +21,7 @@ del _cd_
 
 
 # PYTHON PROJECT IMPORTS
-from algs.DRAM.gmm import GMM
+from algs.PYMM.gmm import GMM
 import data.load_mnist as mnist
 import data.load_musicnet as musicnet
 import data.load_imagenet2012 as imagenet
@@ -49,8 +49,7 @@ def main() -> None:
     parser.add_argument("--gpu_id", type=int, default="cpu", help="what gpu to run on")
     args = parser.parse_args()
 
-    shelf_direct_copy = pymm.shelf("gmm_shelf_direct_copy", size_mb=args.shelf_size_mb, pmem_path=args.shelf_path)
-    shelf_inplace_copy = pymm.shelf("gmm_shelf_inplace_copy", size_mb=args.shelf_size_mb, pmem_path=args.shelf_path)
+    shelf = pymm.shelf("gmm_shelf", size_mb=args.shelf_size_mb, pmem_path=args.shelf_path)
 
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
@@ -58,32 +57,13 @@ def main() -> None:
     model_compressed_file: str = os.path.join(args.out_dir, "model_compressed.npz")
     model_file: str = os.path.join(args.out_dir, "mode_uncompressed.npz")
 
-    model_pymm_compressed_file: str = os.path.join(args.shelf_path, "model_compressed.npz")
-    model_pymm_file: str = os.path.join(args.shelf_path, "mode_uncompressed.npz")
-
     loading_times: np.ndarray = np.zeros(args.num_repetitions, dtype=float)
     model_creation_times: np.ndarray = np.zeros_like(loading_times)
-    model_nvme_compressed_saving_times: List[List[float]] = list() # dont know how many epochs each training call may take
-    model_nvme_saving_times: List[List[float]] = list()
-
-    model_pymm_compressed_saving_times: List[List[float]] = list()
-    model_pymm_saving_times: List[List[float]] = list()
-
-    model_pymm_direct_saving_times: List[List[float]] = list()
-    model_pymm_inplace_saving_times: List[List[float]] = list()
     epoch_training_times: List[List[float]] = list()
     model_training_times: np.ndarray = np.zeros_like(loading_times)
     script_runtime: float = None
 
     for experiment_idx in range(args.num_repetitions):
-        model_nvme_compressed_saving_times.append(list())
-        model_nvme_saving_times.append(list())
-
-        model_pymm_compressed_saving_times.append(list())
-        model_pymm_saving_times.append(list())
-
-        model_pymm_direct_saving_times.append(list())
-        model_pymm_inplace_saving_times.append(list())
         epoch_training_times.append(list())
 
         start_loading_time = time.time()
@@ -99,19 +79,8 @@ def main() -> None:
         loading_times[experiment_idx] = time.time() - start_loading_time
 
         start_model_creation_time = time.time()
-        m = GMM(X.shape[-1], args.k).to(args.gpu_id)
+        m = GMM(X.shape[-1], args.k, shelf).to(args.gpu_id)
         model_creation_times[experiment_idx] = time.time() - start_model_creation_time
-
-        # initially put hyperparams on the shelf
-        shelf_direct_copy.num_gaussians = m.num_gaussians
-        shelf_direct_copy.num_features = m.num_features
-        shelf_direct_copy.means = pt.stack([obj.mean.cpu() for obj in m.pt_gaussian_objs], axis=0)
-        shelf_direct_copy.covs = pt.stack([obj.covariance_matrix.cpu() for obj in m.pt_gaussian_objs], axis=0)
-
-        shelf_inplace_copy.num_gaussians = m.num_gaussians
-        shelf_inplace_copy.num_features = m.num_features
-        shelf_inplace_copy.means = pt.stack([obj.mean.cpu() for obj in m.pt_gaussian_objs], axis=0)
-        shelf_inplace_copy.covs = pt.stack([obj.covariance_matrix.cpu() for obj in m.pt_gaussian_objs], axis=0)
 
         with tqdm(total=args.max_iter, desc="training model @ experiment %s" % experiment_idx) as pbar:
             start_training_time = time.time()
@@ -119,35 +88,6 @@ def main() -> None:
 
             def record_times_and_progress_bar_update(model) -> None:
                 end_epoch_time = time.time()
-
-                num_epochs = len(epoch_training_times[-1])
-                if num_epochs % args.save_frequency == 0:
-                    # NVME saving
-                    start_saving_time = time.time()
-                    model.save_compressed(model_compressed_file)
-                    model_nvme_compressed_saving_times[-1].append(time.time() - start_saving_time)
-
-                    start_saving_time = time.time()
-                    model.save(model_file)
-                    model_nvme_saving_times[-1].append(time.time() - start_saving_time)
-
-                    # PYMM np saving
-                    start_saving_time = time.time()
-                    model.save_compressed(model_pymm_compressed_file)
-                    model_pymm_compressed_saving_times[-1].append(time.time() - start_saving_time)
-
-                    start_saving_time = time.time()
-                    model.save(model_pymm_file)
-                    model_pymm_saving_times[-1].append(time.time() - start_saving_time)
-
-                    # PYMM shelf saving
-                    start_saving_time = time.time()
-                    model.save_shelf_direct(shelf_direct_copy)
-                    model_pymm_direct_saving_times[-1].append(time.time() - start_saving_time)
-
-                    start_saving_time = time.time()
-                    model.save_shelf_inplace(shelf_inplace_copy)
-                    model_pymm_inplace_saving_times[-1].append(time.time() - start_saving_time)         
 
                 epoch_training_times[-1][-1] = end_epoch_time - epoch_training_times[-1][-1]
                 pbar.update(1)
@@ -161,15 +101,6 @@ def main() -> None:
 
     np.savez_compressed(results_file, loading_times=loading_times,
                                       model_creation_times=model_creation_times,
-                                      model_nvme_compressed_saving_times=model_nvme_compressed_saving_times,
-                                      model_nvme_saving_times=model_nvme_saving_times,
-
-                                      model_pymm_compressed_saving_times=model_pymm_compressed_saving_times,
-                                      model_pymm_saving_times=model_pymm_saving_times,
-
-                                      model_pymm_direct_saving_times=model_pymm_direct_saving_times,
-                                      model_pymm_inplace_saving_times=model_pymm_inplace_saving_times,
-
                                       epoch_training_times=epoch_training_times,
                                       model_training_times=model_training_times,
                                       script_runtime=script_runtime)

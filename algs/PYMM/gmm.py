@@ -6,6 +6,7 @@ import torch as pt
 import torch.distributions.distribution as ptdd
 import torch.distributions.multivariate_normal as ptdmvn
 import sys
+import pymm
 
 
 np.random.seed(12345)
@@ -25,16 +26,20 @@ def pdf(X: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
 
 
 class GMM(object):
-    def __init__(self, num_features: int, num_gaussians: int) -> None:
+    def __init__(self, num_features: int, num_gaussians: int, shelf) -> None:
+        self.shelf = shelf
         self.num_features: int = int(num_features)
         self.num_gaussians: int = int(num_gaussians)
 
+        self.shelf.num_features = self.num_features
+        self.shelf.num_gaussians = self.num_gaussians
+
         # generate one mean vector per gaussian cluster
-        mus: pt.Tensor = pt.from_numpy(np.random.randn(self.num_gaussians, self.num_features)).to(pt.float32)
+        mus: pt.Tensor = pt.from_numpy(np.random.randn(self.shelf.num_gaussians, self.num_features)).to(pt.float32)
 
         # generate one covariance matrix per gaussian cluster, must be positive semidefinite
         covs: pt.Tensor = None
-        if self.num_features > 1:
+        if self.shelf.num_features > 1:
             k: int = int(self.num_features / 2)
             Ws: List[np.ndarray] = [np.random.randn(self.num_features, k) for _ in range(self.num_gaussians)]
             covs = pt.from_numpy(np.stack([np.dot(W, W.T) + np.diag(np.random.randint(low=1, high=self.num_features,
@@ -44,13 +49,22 @@ class GMM(object):
             # 1-d case....cannot use random_correlation
             covs = pt.from_numpy(np.random.rand(self.num_gaussians, self.num_features, self.num_features))\
                 .to(pt.float32)
+        self.shelf.means = mus
+        self.shelf.covs = covs
+
+        self.shelf.likelihoods = None
+        self.shelf.gammas = None
+        self.shelf.Ws = None
 
         self.pt_gaussian_objs: List[ptdd.Distribution] = [ptdmvn.MultivariateNormal(mu, scale_tril=pt.tril(cov))
                                                           for mu, cov in zip(mus, covs)]
 
         # init priors to uniform distribution
-        self.priors: pt.Tensor = pt.ones((self.num_gaussians, 1), dtype=pt.float32)/self.num_gaussians
-        self.gpu_id: int = None
+        self.shelf.priors: pt.Tensor = pt.ones((self.num_gaussians, 1), dtype=pt.float32)/self.num_gaussians
+        self.shelf.gpu_id: int = None
+        self.gpu_id = None
+
+        self.priors = self.shelf.priors
 
     def to(self, gpu_id: int = None) -> "GMM":
         gpu_id = "cpu" if gpu_id is None else gpu_id
@@ -58,6 +72,7 @@ class GMM(object):
                                                            scale_tril=obj.scale_tril.to(gpu_id))
                                  for obj in self.pt_gaussian_objs]
         self.priors = self.priors.to(gpu_id)
+        self.shelf.gpu_id = gpu_id
         self.gpu_id = gpu_id
         return self
 
@@ -67,9 +82,18 @@ class GMM(object):
         batch_size: int = X.size(0) if batch_size is None else batch_size
 
         likelihoods: pt.Tensor = pt.empty((X.size(0), self.num_gaussians), dtype=pt.float32, device=self.gpu_id)
+
+        if self.shelf.likelihoods is None or self.shelf.likelihoods.size() != likelihoods.size():
+            self.shelf.likelihoods = likelihoods.cpu()
+        else:
+            self.shelf.likelihoods.copy_(likelihoods)
+        self.shelf.likelihoods.persist()
+
         if batch_size == X.size(0):
             for cluster_idx in range(self.num_gaussians):
                 pt.exp(self.pt_gaussian_objs[cluster_idx].log_prob(X), out=likelihoods[:, cluster_idx])
+                self.shelf.likelihoods[:, cluster_idx].copy_(likelihoods[:, cluster_idx])
+                self.shelf.likelihoods.persist()
         else:
             num_batches: int = int(np.ceil(X.size(0) / batch_size))
             X_batch_buffer: pt.Tensor = pt.empty((batch_size, X.size(1)), dtype=X.dtype, device=self.gpu_id)
@@ -81,6 +105,9 @@ class GMM(object):
                 for cluster_idx in range(self.num_gaussians):
                     pt.exp(self.pt_gaussian_objs[cluster_idx].log_prob(X_batch_buffer),
                            out=likelihoods[batch_idx*batch_size: (batch_idx+1)*batch_size, cluster_idx])
+                    self.shelf.likelihoods[batch_idx*batch_size: (batch_idx+1)*batch_size, cluster_idx].copy_(
+                        likelihoods[batch_idx*batch_size: (batch_idx+1)*batch_size, cluster_idx])
+                    self.shelf.likelihoods.persist()
 
             # now do the last batch
             batch_size = min(num_batches*batch_size, X.size(0)) - (num_batches-1)*batch_size
@@ -88,7 +115,12 @@ class GMM(object):
             for cluster_idx in range(self.num_gaussians):
                 pt.exp(self.pt_gaussian_objs[cluster_idx].log_prob(X_batch_buffer),
                            out=likelihoods[-batch_size:, cluster_idx])
+                self.shelf.likelihoods[-batch_size:, cluster_idx].copy_(likelihoods[-batch_size:, cluster_idx])
+                self.shelf.likelihoods.persist()
+
         likelihoods *= self.priors.T
+        self.shelf.likelihoods.copy_(likelihoods)
+        self.shelf.likelihoods.persist()
         return likelihoods
 
     def log_likelihood(self, X: pt.Tensor, batch_size: int = None) -> float:
@@ -133,6 +165,8 @@ class GMM(object):
 
                 pt.sum(Ws_batch.view(-1,1) * X_batch_buffer, dim=0, out=mu_aggregate_buffer)
                 mus[cluster_idx, :].add_(mu_aggregate_buffer)
+                self.shelf.means[cluster_idx,:].copy_(mus[cluster_idx,:])
+                self.shelf.means.persist()
 
                 pt.sub(X_batch_buffer, self.pt_gaussian_objs[cluster_idx].mean, out=X_minus_mu_batch_buffer)
 
@@ -141,6 +175,8 @@ class GMM(object):
                 batch_covs_buffer.mul_(Ws_batch)
                 covs[cluster_idx, :, :].add_(pt.sum(batch_covs_buffer, out=cov_aggregate_buffer,
                                                     dim=0))
+                self.shelf.covs[cluster_idx,:,:].copy_(covs[cluster_idx,:,:])
+                self.shelf.covs.persist()
 
         # do the last batch
         batch_size: int = min(num_batches*batch_size, X.size(0)) - (num_batches-1)*batch_size
@@ -156,6 +192,8 @@ class GMM(object):
 
             pt.sum(Ws_batch.view(-1,1) * X_batch_buffer, dim=0, out=mu_aggregate_buffer)
             mus[cluster_idx, :].add_(mu_aggregate_buffer)
+            self.shelf.means[cluster_idx,:].copy_(mus[cluster_idx,:])
+            self.shelf.means.persist()
 
             pt.sub(X_batch_buffer, self.pt_gaussian_objs[cluster_idx].mean, out=X_minus_mu_batch_buffer)
 
@@ -164,12 +202,16 @@ class GMM(object):
             batch_covs_buffer.mul_(Ws_batch)
             covs[cluster_idx, :, :].add_(pt.sum(batch_covs_buffer, out=cov_aggregate_buffer,
                                                 dim=0))
+            self.shelf.covs[cluster_idx,:,:].copy_(covs[cluster_idx,:,:])
+            self.shelf.covs.persist()
 
         mus.add_(EPSILON)
         diagonal_byte_mask: pt.Tensor = pt.eye(self.num_features).bool()
         for cluster_idx, (mu, cov) in enumerate(zip(mus, covs)):
             # print(mu, cov)
             cov[diagonal_byte_mask] = pt.diag(cov) + EPSILON # hack to keep large dim covs positive semi-definite
+            self.shelf.covs[cluster_idx,:,:].copy_(cov)
+            self.shelf.covs.persist()
             self.pt_gaussian_objs[cluster_idx] = ptdmvn.MultivariateNormal(mu,
                                                                            covariance_matrix=cov)
 
@@ -180,7 +222,16 @@ class GMM(object):
         gamma: pt.Tensor = self.batch_likelihood(X, batch_size=batch_size)
         # gamma: np.ndarray = np.hstack([(pdf(X, mu.reshape(-1), cov) * prior).reshape(-1, 1)
         #                                for mu,cov,prior in zip(self.mus, self.covs, self.priors.reshape(-1))])
+
+        if self.shelf.gamma is None or self.shelf.gamma.size() != self.shelf.likelihoods.size():
+            self.shelf.gamma = gamma.cpu()
+        else:
+            self.shelf.gamma.copy_(gamma)
+        self.shelf.gamma.persist()
+
         gamma /= (gamma.sum(dim=1, keepdims=True) + EPSILON)
+        self.shelf.gamma.copy_(gamma)
+        self.shelf.gamma.persist()
 
         """M-step"""
         # TODO: update three member variables (attributes, fields, whatever the vocab term you use is):
@@ -189,6 +240,8 @@ class GMM(object):
         #       3) self.covs
         self.priors = gamma.mean(dim=0, keepdims=True).T
         self.priors /= (self.priors.sum() + EPSILON)
+        self.shelf.priors.copy_(self.priors)
+        self.shelf.priors.persist()
 
         """We can do this at least two ways. The first way (commented out) is more direct but less efficient:
            This way computes the formulae (from question 2) as they are written.
@@ -204,6 +257,11 @@ class GMM(object):
            (as a matrix), we can save a lot of time (for large data matrices)
         """
         Ws: pt.Tensor = gamma / (gamma.sum(dim=0, keepdims=True) + EPSILON)
+        if self.shelf.Ws is None or self.shelf.Ws.size() != Ws.size():
+            self.shelf.Ws = Ws.cpu()
+        else:
+            self.shelf.Ws.copy_(Ws)
+        self.shelf.Ws.persist()
         # self.mus = np.vstack([np.sum(Ws[:,k].reshape(-1,1)*X, axis=0, keepdims=True) for k in range(self.num_gaussians)])
         # self.covs = np.stack([sum(Ws[i,k]*(x_i - mu).reshape(-1,1).dot((x_i - mu).reshape(1,-1))
         #                           for i,x_i in enumerate(X))
@@ -230,37 +288,6 @@ class GMM(object):
 
             if monitor_func is not None:
                 monitor_func(self)
-
-    def save_compressed(self, filepath: str) -> None:
-        np.savez_compressed(filepath, mus=np.stack([obj.mean.cpu().numpy()
-                                                    for obj in self.pt_gaussian_objs], axis=0),
-                            covs=np.stack([obj.covariance_matrix.cpu().numpy()
-                                                  for obj in self.pt_gaussian_objs], axis=0),
-                            num_features=self.num_features, num_gaussians=self.num_gaussians)
-
-    def save(self, filepath: str) -> None:
-        np.savez(filepath, mus=np.stack([obj.mean.cpu().numpy() for obj in self.pt_gaussian_objs], axis=0),
-                 covs=np.stack([obj.covariance_matrix.cpu().numpy() for obj in self.pt_gaussian_objs], axis=0),
-                 num_features=self.num_features, num_gaussians=self.num_gaussians)
-
-    def save_shelf_direct(self, shelf) -> None:
-        for idx, obj in enumerate(self.pt_gaussian_objs):
-            shelf.means[idx, :] = obj.mean
-            shelf.covs[idx, :] = obj.covariance_matrix
-
-        # shelf.means = pt.stack([obj.mean.cpu().numpy() for obj in self.pt_gaussian_objs], axis=0)
-        # shelf.covs = .stack([obj.covariance_matrix.cpu().numpy() for obj in self.pt_gaussian_objs], axis=0)
-
-        shelf.means.persist()
-        shelf.covs.persist()
-
-    def save_shelf_inplace(self, shelf) -> None:
-        for idx, obj in enumerate(self.pt_gaussian_objs):
-            shelf.means[idx, :].copy_(obj.mean)
-            shelf.covs[idx, :].copy_(obj.covariance_matrix)
-
-        shelf.means.persist()
-        shelf.covs.persist()
 
 
 def test_model_1d() -> None:

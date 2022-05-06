@@ -27,7 +27,7 @@ class KMeans(object):
                  distance_func: Callable[[np.ndarray, np.ndarray], np.ndarray] = None) -> None:
         self.k: int = int(k)
         self.num_features: int = int(num_features)
-        self.centers: np.ndarray = None
+        self.centers: np.ndarray = np.zeros((self.k, self.num_features), dtype=float)
         self.distance_func: Callable[[np.ndarray, np.ndarray], np.ndarray] = distance_func
         if self.distance_func is None:
             self.distance_func = l2_squared_distance
@@ -132,10 +132,17 @@ class KMeans(object):
     def save(self, filepath: str) -> None:
         np.savez(filepath, centers=self.centers, k=self.k, num_features=self.num_features)
 
-    def save_shelf(self, shelf) -> None:
+    def save_shelf_direct(self, shelf) -> None:
         shelf.centers = self.centers
-        shelf.k = self.k
-        shelf.num_features = self.num_features
+        shelf.centers.persist()
+        # shelf.k = self.k
+        # shelf.num_features = self.num_features
+
+    def save_shelf_inplace(self, shelf) -> None:
+        np.copyto(shelf.centers, self.centers) # faster than doing shelf.centers = self.centers?
+        shelf.centers.persist()
+        # shelf.k = self.k
+        # shelf.num_features = self.num_features
 
     def load(self, fp: str):
         npz = np.load(fp)

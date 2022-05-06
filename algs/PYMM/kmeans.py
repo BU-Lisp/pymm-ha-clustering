@@ -29,7 +29,8 @@ class KMeans(object):
         self.shelf = shelf
         self.shelf.k: int = int(k)
         self.shelf.num_features: int = int(num_features)
-        self.shelf.centers: pymm.ndarray = None
+        # print(k, num_features)
+        self.shelf.centers: pymm.ndarray = np.zeros((self.shelf.k, self.shelf.num_features,), dtype=float)
 
         # buffers for intermediary ops
         self.shelf.distance_buffer: pymm.ndarray = None
@@ -40,7 +41,8 @@ class KMeans(object):
             self.distance_func = l2_squared_distance
 
     def init_centers(self, X: np.ndarray) -> None:
-        self.shelf.centers = np.random.randn(self.shelf.k, self.shelf.num_features)
+        # self.shelf.centers = np.random.randn(self.shelf.k, self.shelf.num_features)
+        np.copyto(self.shelf.centers, np.random.randn(self.shelf.k, self.shelf.num_features))
         # print(self.centers.shape)
 
         # kmeans++ initialization
@@ -49,7 +51,10 @@ class KMeans(object):
 
         # step 1) first choose one center uniformly at random among the data points
         center_idx: int = np.random.randint(0, X.shape[0])
-        self.shelf.centers[0] = X[center_idx]
+
+        # self.shelf.centers[0] = X[center_idx]
+        np.copyto(self.shelf.centers[0,:], X[center_idx,:])
+
         not_chosen_mask[center_idx] = False
 
         num_centers_processed: int = 1
@@ -62,13 +67,27 @@ class KMeans(object):
             # step 3) choose new data point at random using probs proportional to D(x)^2
             weights: np.ndarray = min_dists_squared / min_dists_squared.sum()
             center_idx = np.random.choice(X_view.shape[0], p=weights)
-            self.shelf.centers[num_centers_processed] = X_view[center_idx]
+
+            # self.shelf.centers[num_centers_processed] = X_view[center_idx]
+            np.copyto(self.shelf.centers[num_centers_processed, :], X_view[center_idx,:]) # faster
+
             not_chosen_mask[pt_idxs[not_chosen_mask][center_idx]] = False
             num_centers_processed += 1
 
     def assign(self, X: np.ndarray) -> pymm.ndarray:
-        self.shelf.distance_buffer: pymm.ndarray = np.zeros((X.shape[0], 2), dtype=float) # defaults to zeros
-        self.shelf.assignments: pymm.ndarray = pymm.ndarray((X.shape[0],), dtype=int) # defaults to zeros
+        # self.shelf.distance_buffer: pymm.ndarray = np.zeros((X.shape[0], 2), dtype=float) # defaults to zeros
+        # self.shelf.assignments: pymm.ndarray = pymm.ndarray((X.shape[0],), dtype=int) # defaults to zeros
+
+        # only need to allocate buffer if it doesnt exist or is the wrong shape
+        if self.shelf.distance_buffer is None or self.shelf.distance_buffer.shape != (X.shape[0], 2):
+            self.shelf.distance_buffer: pymm.ndarray = np.zeros((X.shape[0], 2), dtype=float) # defaults to zeros
+        else:
+            self.shelf.distance_buffer.fill(0)
+
+        if self.shelf.assignments is None or self.shelf.assignments.shape != (X.shape[0],):
+            self.shelf.assignments: pymm.ndarray = np.zeros((X.shape[0],), dtype=int) # defaults to zeros
+        else:
+            self.shelf.assignments.fill(0)
 
         arange: np.ndarray = np.arange(X.shape[0])
 
@@ -81,8 +100,16 @@ class KMeans(object):
 
             # if any of mins are 1, then the new value is smaller than the old value
             # min_mask: np.ndarray = mins == 1
-            self.shelf.assignments[mins == 1] = cluster_idx
-            self.shelf.distance_buffer[:, 0] = self.shelf.distance_buffer[arange, mins]
+            # self.shelf.assignments[mins == 1] = cluster_idx
+            # self.shelf.distance_buffer[:, 0] = self.shelf.distance_buffer[arange, mins]
+
+            # np.copyto(dst, src, where=True)
+            np.copyto(self.shelf.assignments, np.array([cluster_idx], dtype=self.shelf.assignments.dtype),
+                      where=mins==1)
+            np.copyto(self.shelf.distance_buffer[:, 0], self.shelf.distance_buffer[arange, mins])
+            self.shelf.distance_buffer.persist()
+
+        self.shelf.assignments.persist()
         return self.shelf.assignments
 
     def cost(self, X: np.ndarray) -> float:
@@ -110,6 +137,8 @@ class KMeans(object):
             if num_assigned > 0:
                 X[X_assigned_mask].mean(axis=0, out=self.shelf.centers[cluster_idx])
 
+        self.shelf.centers.persist()
+
     def train(self, X: np.ndarray, epsilon: float = 1e-9, max_iter: int = 1e6, 
                 monitor_func: Callable[["KMeans"], None] = None) -> None:
         # structure of iterative algorithm: while (dont give up) and (havent converged): do stuff
@@ -120,6 +149,11 @@ class KMeans(object):
 
         if self.shelf.centers is None:
             self.init_centers(X)
+
+        # init buffers
+        self.shelf.distance_buffer: pymm.ndarray = pymm.ndarray((X.shape[0], 2), dtype=float) # defaults to zeros
+        self.shelf.assignments: pymm.ndarray = pymm.ndarray((X.shape[0],), dtype=int) # defaults to zeros
+
         while current_iter < max_iter and abs(prev_cost - current_cost)/abs(prev_cost) > epsilon:
             self.train_iter(X)
 
